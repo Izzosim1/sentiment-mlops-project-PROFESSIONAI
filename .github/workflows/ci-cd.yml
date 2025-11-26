@@ -1,0 +1,122 @@
+name: CI/CD Pipeline
+
+# Quando eseguire la pipeline
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Job 1: Esegue i test
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout codice
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Cache dipendenze pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Installa dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Esegui test
+        run: pytest tests/ -v
+
+  # Job 2: Valuta il modello
+  evaluate:
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout codice
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Cache dipendenze pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Cache modello HuggingFace
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-hf-model
+      
+      - name: Installa dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Valuta modello
+        run: python -m src.evaluate
+      
+      - name: Upload metriche
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-metrics
+          path: metrics/
+
+  # Job 3: Build e prepara per deploy
+  build:
+    needs: evaluate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: Checkout codice
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Verifica struttura progetto
+        run: |
+          echo "Struttura del progetto:"
+          ls -la
+          echo ""
+          echo "Contenuto src/:"
+          ls -la src/
+          echo ""
+          echo "Contenuto tests/:"
+          ls -la tests/
+      
+      - name: Build completato
+        run: echo "Pipeline completata con successo!"
+```
+
+Salva il file (Ctrl+S).
+
+---
+
+## Passo 2.2 - Spiegazione del Workflow
+
+**Struttura generale:**
+```
+on: push/pull_request  →  test  →  evaluate  →  build
+                              ↓         ↓          ↓
+                         (sempre)  (se test ok)  (solo su main)
